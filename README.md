@@ -51,7 +51,7 @@ This is where you run `./start.sh`.
 | Outbound `ghcr.io` | Pulls the Docker image (~19 GB, public — no login) |
 | Outbound `huggingface.co` | Downloads [kodelow/Hy3-NVFP4-W4A16](https://huggingface.co/kodelow/Hy3-NVFP4-W4A16) |
 | Passwordless SSH to worker | As `REMOTE_USER` (default: your login) — used for image copy, model rsync, and starting the worker container |
-| Cluster SSH key (optional) | `/etc/kamiwaza/ssl/cluster.key` — used automatically if present; override with `SSH_KEY` |
+| SSH key (optional) | Set `SSH_KEY` to a private key path if passwordless SSH does not use your default `~/.ssh` config or ssh-agent |
 
 The worker does **not** need outbound internet. The head pulls the image and streams it over SSH.
 
@@ -323,7 +323,7 @@ Edit the network block at the top of `start.sh`, or override at runtime via envi
 |---|---|---|
 | `IMAGE` | `ghcr.io/miaai-lab/hy3-dual-dgx-spark:vllm-probe-modded` | `start.sh` |
 | `REMOTE_USER` | `$(id -un)` | `start.sh`, `stop.sh` |
-| `SSH_KEY` | `/etc/kamiwaza/ssl/cluster.key` | `start.sh`, `stop.sh` |
+| `SSH_KEY` | (unset — use default SSH config/agent) | `start.sh`, `stop.sh` |
 | `FOLLOW_LOGS` | `1` | `start.sh` |
 | `MODEL_REPO` | `kodelow/Hy3-NVFP4-W4A16` | `start.sh` |
 

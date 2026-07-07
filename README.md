@@ -90,7 +90,7 @@ The script will:
 Model load takes roughly 10 minutes. When ready, the API is at:
 
 ```
-http://<HEAD_IP>:8600/v1
+http://<HEAD_IP>:8888/v1
 ```
 
 ### 5. Stop
@@ -118,7 +118,7 @@ Launched detached inside `hy3-head` with:
 
 ```
 vllm serve <model-snapshot> \
-  --served-model-name hy3 --port 8600 \
+  --served-model-name hy3 --port 8888 \
   --tensor-parallel-size 2 --distributed-executor-backend ray \
   --max-model-len 131072 --max-num-seqs 6 \
   --kv-cache-dtype fp8_e4m3 --gpu-memory-utilization 0.90 \
@@ -197,7 +197,7 @@ Pull the image on both nodes (see step 1), then rerun `./start.sh`.
 **Health check**
 
 ```bash
-curl http://<HEAD_IP>:8600/health
+curl http://<HEAD_IP>:8888/health
 ```
 
 Returns `200` once model load completes.

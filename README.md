@@ -106,7 +106,41 @@ ibdev2netdev
 
 Set the same `WORKER_IP` at the top of `stop.sh`.
 
-### 3. Start
+### 3. Disable earlyoom (DGX Spark — required)
+
+GB10 uses **unified memory**: Hy3 weights (~85 GB) plus KV cache and Ray leave very little free RAM. DGX Spark ships with `earlyoom` configured to **prefer killing** `vllm`, `ray`, and `python` when available memory drops below **2%**. That SIGTERM's Ray workers and takes down vLLM — often right after load or on the first request.
+
+**Before every `./start.sh`, on the head node:**
+
+```bash
+sudo systemctl stop earlyoom
+```
+
+Verify it is stopped:
+
+```bash
+systemctl is-active earlyoom   # should print "inactive"
+```
+
+**Permanent fix** (optional) — edit `/etc/default/earlyoom` and move inference processes from `--prefer` to `--avoid`:
+
+```bash
+# Before (kills inference first):
+EARLYOOM_ARGS="-m 2 -s 80 --prefer '(vllm|VLLM|...|ray|python3|python)' --avoid '(systemd|sshd|dockerd|...)'
+
+# After (protect inference):
+EARLYOOM_ARGS="-m 2 -s 80 --avoid '(vllm|VLLM|sglang|llama-server|llama-cli|trtllm|tritonserver|ray|python3|python|dockerd|containerd|systemd|sshd|dbus-daemon|NetworkManager)'"
+```
+
+Then:
+
+```bash
+sudo systemctl restart earlyoom
+```
+
+`start.sh` prints a warning if earlyoom is still running with the default `--prefer` config.
+
+### 4. Start
 
 ```bash
 ./start.sh
@@ -129,7 +163,7 @@ Model load takes roughly 10 minutes. When ready, the API is at:
 http://<HEAD_IP>:8888/v1
 ```
 
-### 4. Stop
+### 5. Stop
 
 ```bash
 ./stop.sh
@@ -164,6 +198,79 @@ vllm serve <model-snapshot> \
 ```
 
 On startup it also patches vLLM's `hy_v3` parsers in-place so `:opensource`-suffixed tokenizer tokens match the checkpoint.
+
+---
+
+## Pi Agent (recommended harness settings)
+
+vLLM enables reasoning via `--reasoning-parser hy_v3`, but **Pi must also request thinking** in the chat template. Hy3 defaults to `reasoning_effort: no_think` unless Pi sends `chat_template_kwargs.reasoning_effort` (`low` or `high`).
+
+Add a `Hy3 Local` provider to `~/.pi/agent/models.json` and set defaults in `~/.pi/agent/settings.json`.
+
+### `~/.pi/agent/settings.json`
+
+```json
+{
+  "defaultProvider": "Hy3 Local",
+  "defaultModel": "hy3",
+  "defaultThinkingLevel": "high"
+}
+```
+
+Use `"high"` for full reasoning, `"low"` for lighter thinking, or `"off"` for `no_think`.
+
+### `~/.pi/agent/models.json` — `Hy3 Local` provider
+
+Point `baseUrl` at your head node if Pi runs elsewhere (`http://<HEAD_IP>:8888/v1`).
+
+```json
+"Hy3 Local": {
+  "baseUrl": "http://localhost:8888/v1",
+  "api": "openai-completions",
+  "apiKey": "dummy",
+  "compat": {
+    "supportsDeveloperRole": false,
+    "supportsReasoningEffort": false,
+    "maxTokensField": "max_tokens"
+  },
+  "models": [
+    {
+      "id": "hy3",
+      "name": "Hy3 295B NVFP4 MTP",
+      "reasoning": true,
+      "input": ["text"],
+      "contextWindow": 131072,
+      "maxTokens": 32768,
+      "thinkingLevelMap": {
+        "off": "no_think",
+        "minimal": "low",
+        "low": "low",
+        "medium": "high",
+        "high": "high",
+        "xhigh": "high"
+      },
+      "compat": {
+        "requiresReasoningContentOnAssistantMessages": true,
+        "thinkingFormat": "chat-template",
+        "chatTemplateKwargs": {
+          "reasoning_effort": {
+            "$var": "thinking.effort",
+            "omitWhenOff": true
+          }
+        }
+      }
+    }
+  ]
+}
+```
+
+| Pi thinking level | Sent to Hy3 as | Effect |
+|---|---|---|
+| `off` | `no_think` | No `</think>` block |
+| `low` / `minimal` | `low` | Light reasoning |
+| `medium` / `high` / `xhigh` | `high` | Full reasoning |
+
+Restart Pi or start a new session after editing these files.
 
 ---
 
@@ -254,6 +361,28 @@ curl http://<HEAD_IP>:8888/health
 ```
 
 Returns `200` once model load completes.
+
+**vLLM shuts down right after load or first request (`EngineDeadError`, `RayWorkerProc died`, `[shutdown] MPClient`)**
+
+Almost always **earlyoom** on DGX Spark. Check:
+
+```bash
+journalctl --since "10 min ago" | grep -E "earlyoom|SIGTERM|ray::RayWorker"
+free -h
+```
+
+If you see `sending SIGTERM to process ... ray::RayWorkerP` and available memory is near **2%**, stop earlyoom before serving:
+
+```bash
+sudo systemctl stop earlyoom
+./stop.sh && ./start.sh
+```
+
+See [step 3 — Disable earlyoom](#3-disable-earlyoom-dgx-spark--required).
+
+**Pi shows no thinking / `reasoning: 0` tokens**
+
+Confirm `defaultThinkingLevel` is not `"off"` in `~/.pi/agent/settings.json` and the `Hy3 Local` model entry includes `thinkingLevelMap` + `chatTemplateKwargs` (see [Pi Agent](#pi-agent-recommended-harness-settings)).
 
 ---
 

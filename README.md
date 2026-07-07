@@ -18,8 +18,24 @@ Everything runs through two scripts:
 On **both** nodes:
 
 - Docker with GPU support
-- The vLLM image loaded locally (default: `vllm-node-tf5-glm52-b12x:probe-modded`)
+- The vLLM Docker image (~19 GB)
 - ~181 GB free disk for model weights
+
+**Docker image** (once published to GHCR):
+
+```bash
+docker pull ghcr.io/miaai-lab/hy3-dual-dgx-spark:vllm-probe-modded
+IMAGE=ghcr.io/miaai-lab/hy3-dual-dgx-spark:vllm-probe-modded ./start.sh
+```
+
+Default local tag if you built it yourself: `vllm-node-tf5-glm52-b12x:probe-modded`
+
+**Publish the image** (maintainers — needs `GITHUB_TOKEN` with `write:packages`):
+
+```bash
+export GITHUB_TOKEN=ghp_...   # classic PAT or fine-grained token with write:packages
+./push-image.sh
+```
 
 On the **head** node (where you run `start.sh`):
 
@@ -191,8 +207,9 @@ Returns `200` once model load completes.
 ## File layout
 
 ```
-start.sh    # all-in-one launcher (edit network block at top)
-stop.sh     # tear down both containers
+start.sh        # all-in-one launcher (edit network block at top)
+stop.sh         # tear down both containers
+push-image.sh   # publish vLLM image to ghcr.io (maintainers)
 README.md
 ```
 

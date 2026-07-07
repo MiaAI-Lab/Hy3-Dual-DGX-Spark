@@ -162,15 +162,47 @@ docker exec -d \
 echo "Started vLLM on ${HEAD_IP}:${PORT}"
 
 if [[ "${FOLLOW_LOGS:-1}" == "1" && "${1:-}" != "--no-follow" ]]; then
-  echo "Following vLLM logs (Ctrl+C detaches; container keeps running)..."
-  echo "Stop with: ./stop.sh"
+  echo "Streaming vLLM logs until API is ready (then this script exits)..."
+  echo "Stop server: ./stop.sh"
   for _ in $(seq 1 30); do
     if docker exec hy3-head test -s /tmp/hy3-serve.log 2>/dev/null; then
       break
     fi
     sleep 1
   done
-  exec docker exec hy3-head tail -f /tmp/hy3-serve.log
+
+  docker exec hy3-head tail -f /tmp/hy3-serve.log &
+  tail_pid=$!
+  cleanup_tail() { kill "$tail_pid" 2>/dev/null || true; wait "$tail_pid" 2>/dev/null || true; }
+  trap cleanup_tail EXIT
+
+  ready=0
+  for _ in $(seq 1 90); do
+    code="$(curl -s -m 3 -o /dev/null -w '%{http_code}' "http://127.0.0.1:${PORT}/v1/models" 2>/dev/null || true)"
+    if [[ "$code" == "200" ]]; then
+      ready=1
+      break
+    fi
+    if ! docker ps --format '{{.Names}}' | grep -qx 'hy3-head'; then
+      echo "FATAL: hy3-head container exited during load." >&2
+      exit 1
+    fi
+    sleep 10
+  done
+
+  cleanup_tail
+  trap - EXIT
+
+  if [[ "$ready" -ne 1 ]]; then
+    echo "WARNING: API did not respond on port ${PORT} within timeout." >&2
+    echo "Check logs: docker exec hy3-head tail -f /tmp/hy3-serve.log"
+    exit 1
+  fi
+
+  echo ""
+  echo "vLLM ready: http://${HEAD_IP}:${PORT}/v1"
+  echo "Tail logs:  docker exec hy3-head tail -f /tmp/hy3-serve.log"
+  exit 0
 fi
 
 echo "Tail vLLM logs: docker exec hy3-head tail -f /tmp/hy3-serve.log"

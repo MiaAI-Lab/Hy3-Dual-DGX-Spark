@@ -199,6 +199,24 @@ vllm serve <model-snapshot> \
 
 On startup it also patches vLLM's `hy_v3` parsers in-place so `:opensource`-suffixed tokenizer tokens match the checkpoint.
 
+### KV cache & concurrency
+
+With `--kv-cache-dtype fp8_e4m3` and `--gpu-memory-utilization 0.90`, vLLM allocates roughly **287k tokens** of KV cache across both GPUs. How many requests you can run in parallel depends on how much of that pool each sequence uses (prompt + generation length).
+
+| Mode | `--max-model-len` | Concurrent requests | When to use |
+|---|---|---|---|
+| **Full 128k** | `131072` (default) | **2** at full KV | Long contexts; each request can use the full 128k window |
+| **Full 256k** | `262144` | **1** at full KV | Maximum single-request context; edit `start.sh` and set `contextWindow` in Pi to `262144` |
+| **Short contexts** | `131072` (default) | **up to 6** (`--max-num-seqs 6`) | Many shorter chats; KV is shared and not exhausted per sequence |
+
+**Examples:**
+
+- **2 concurrent at 128k** — default `start.sh` settings. At startup, vLLM logs something like `Maximum concurrency for 131,072 tokens per request: 2.19x` — that is ~2 full-context requests.
+- **1 concurrent at 256k** — raise `--max-model-len` to `262144` in the vLLM serve block in `start.sh`. The ~287k token pool fits one full 256k request; do not expect a second concurrent full-context job.
+- **6 concurrent** — keep `--max-num-seqs 6`. vLLM will schedule up to six sequences, but only while their combined KV usage stays within the pool. Short prompts and generations can all run at once; two or more **full** 128k requests will still cap out around **2**.
+
+To change context length, edit `--max-model-len` in the serve heredoc inside `start.sh`, then `./stop.sh && ./start.sh`.
+
 ---
 
 ## Pi Agent (recommended harness settings)

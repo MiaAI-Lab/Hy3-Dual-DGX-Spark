@@ -19,7 +19,7 @@ PORT="${PORT:-8888}"
 IMAGE="${IMAGE:-ghcr.io/miaai-lab/hy3-dual-dgx-spark:vllm-probe-modded}"
 RAY_PORT="${RAY_PORT:-26480}"
 REMOTE_USER="${REMOTE_USER:-$(id -un)}"
-SSH_KEY="${SSH_KEY:-/etc/kamiwaza/ssl/cluster.key}"
+SSH_KEY="${SSH_KEY:-}"
 
 docker_common=(
   --network host --ipc host --privileged --security-opt label=disable --gpus all
@@ -33,8 +33,8 @@ docker_common=(
 )
 
 SSH_OPTS=(-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o GlobalKnownHostsFile=/dev/null -o LogLevel=ERROR -o BatchMode=yes -o ConnectTimeout=10)
-if [[ -f "$SSH_KEY" ]]; then
-  SSH_OPTS+=(-i "$SSH_KEY" -o IdentitiesOnly=yes -o IdentityAgent=none)
+if [[ -n "${SSH_KEY}" && -f "${SSH_KEY}" ]]; then
+  SSH_OPTS+=(-i "${SSH_KEY}" -o IdentitiesOnly=yes -o IdentityAgent=none)
 fi
 REMOTE_TARGET="${REMOTE_USER}@${WORKER_IP}"
 

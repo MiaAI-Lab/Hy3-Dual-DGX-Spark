@@ -10,13 +10,6 @@ WORKER_IP="10.0.0.2"         # remote worker fabric/cluster IP
 CLUSTER_IFACE="enp1s0f1np1"  # NIC carrying HEAD_IP/WORKER_IP (Gloo + NCCL socket bootstrap)
 NCCL_IB_HCA="roceP2p1s0f0"   # RoCE HCA for NCCL GPU traffic (not the socket-bootstrap NIC)
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-
-if [[ -f "$SCRIPT_DIR/env/hy3-nvfp4-tp2.env" ]]; then
-  # shellcheck disable=SC1091
-  source "$SCRIPT_DIR/env/hy3-nvfp4-tp2.env"
-fi
-
 MODEL_REPO="${MODEL_REPO:-kodelow/Hy3-NVFP4-W4A16}"
 MODEL_HOST_DIR="${MODEL_HOST_DIR:-}"
 MODEL_REMOTE_DIR="${MODEL_REMOTE_DIR:-}"

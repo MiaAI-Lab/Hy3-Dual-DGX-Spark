@@ -138,17 +138,7 @@ FOLLOW_LOGS=0 ./start.sh
 
 ## Optional configuration
 
-### `env/hy3-nvfp4-tp2.env`
-
-Override serve settings without editing `start.sh`:
-
-```bash
-SERVED_NAME=hy3
-PORT=8600
-IMAGE=vllm-node-tf5-glm52-b12x:probe-modded
-```
-
-Network IPs and interface names in `start.sh` take precedence over values in this file.
+Edit the network block at the top of `start.sh`, or override at runtime via environment variables:
 
 ### Environment variables
 
@@ -201,13 +191,9 @@ Returns `200` once model load completes.
 ## File layout
 
 ```
-start.sh          # all-in-one launcher (edit network block at top)
-stop.sh           # tear down both containers
-env/
-  hy3-nvfp4-tp2.env   # optional serve/image overrides
-scripts/
-  hy3-launch.sh       # deprecated wrapper → calls start.sh
-  serve-tools-hy3.sh  # reference copy; start.sh embeds this inline
+start.sh    # all-in-one launcher (edit network block at top)
+stop.sh     # tear down both containers
+README.md
 ```
 
 ---

@@ -114,6 +114,13 @@ if [[ "${nodes:-0}" -lt 2 ]]; then
   exit 1
 fi
 
+if pgrep -x earlyoom >/dev/null 2>&1 && grep -q -- '--prefer.*ray' /etc/default/earlyoom 2>/dev/null; then
+  echo "WARNING: earlyoom is configured to prefer killing vllm/ray/python." >&2
+  echo "         Hy3 load can trip it and SIGTERM Ray workers. Before serving, run:" >&2
+  echo "           sudo systemctl stop earlyoom" >&2
+  echo "         Or move inference processes from --prefer to --avoid in /etc/default/earlyoom." >&2
+fi
+
 echo "== launch vLLM serve (detached inside head) =="
 SERVE_SCRIPT="$(mktemp)"
 trap 'rm -f "$SERVE_SCRIPT"' EXIT

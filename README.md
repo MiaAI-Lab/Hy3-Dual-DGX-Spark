@@ -15,18 +15,11 @@ Everything runs through two scripts:
 
 ### 1. Download the Docker image
 
-Run these commands on **both** nodes (head and worker). The image is ~19 GB.
+Run on **both** nodes (head and worker). The image is ~19 GB and public — no login required.
 
 ```bash
-# Log in to GitHub Container Registry (package is private)
-echo "YOUR_GITHUB_TOKEN" | docker login ghcr.io -u MiaAI-Lab --password-stdin
-
-# Download the vLLM image
 docker pull ghcr.io/miaai-lab/hy3-dual-dgx-spark:vllm-probe-modded
 ```
-
-Use a GitHub personal access token with `read:packages` scope. Create one at:
-https://github.com/settings/tokens
 
 Verify the image is present:
 

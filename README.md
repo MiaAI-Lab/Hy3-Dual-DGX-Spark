@@ -26,17 +26,55 @@ Everything runs through two scripts:
 
 ### 1. Prerequisites
 
-On **both** nodes:
+#### Hardware
 
-- Docker with GPU support
-- ~181 GB free disk for model weights
+- **2× NVIDIA DGX Spark** (GB10), connected over the **200GbE RoCE fabric**
+- Cluster/fabric IPs reachable between the two nodes (e.g. `10.0.0.1` ↔ `10.0.0.2`)
 
-On the **head** node (where you run `start.sh`):
+#### Both nodes
 
-- Outbound access to `ghcr.io` (image is pulled here, then streamed to the worker)
-- Passwordless SSH to the worker as `REMOTE_USER` (default: your login)
-- Optional cluster key at `/etc/kamiwaza/ssl/cluster.key` (used automatically if present)
-- `python3` with `huggingface_hub` installed
+| Requirement | Notes |
+|---|---|
+| Docker with GPU support | `docker run --gpus all` must work |
+| Disk space | ~181 GB for model weights + ~19 GB for the Docker image (first run) |
+| `rsync` | Installed on both nodes (model sync uses `rsync` over SSH) |
+
+#### Head node only
+
+This is where you run `./start.sh`.
+
+| Requirement | Notes |
+|---|---|
+| This repo | Clone or copy `start.sh` and `stop.sh` onto the head |
+| `bash`, `docker`, `rsync`, `python3` | Used by `start.sh` |
+| `huggingface_hub` | `pip install huggingface_hub` — downloads the model on first run |
+| Outbound `ghcr.io` | Pulls the Docker image (~19 GB, public — no login) |
+| Outbound `huggingface.co` | Downloads [kodelow/Hy3-NVFP4-W4A16](https://huggingface.co/kodelow/Hy3-NVFP4-W4A16) |
+| Passwordless SSH to worker | As `REMOTE_USER` (default: your login) — used for image copy, model rsync, and starting the worker container |
+| Cluster SSH key (optional) | `/etc/kamiwaza/ssl/cluster.key` — used automatically if present; override with `SSH_KEY` |
+
+The worker does **not** need outbound internet. The head pulls the image and streams it over SSH.
+
+**Verify on the head before starting:**
+
+```bash
+docker run --rm --gpus all nvidia/cuda:12.0.0-base-ubuntu22.04 nvidia-smi
+python3 -c "import huggingface_hub"
+ssh <user>@<WORKER_IP> docker info
+ssh <user>@<WORKER_IP> rsync --version
+```
+
+#### Worker node only
+
+| Requirement | Notes |
+|---|---|
+| Docker with GPU support | Head starts containers here via `ssh … docker run` |
+| SSH from head | Passwordless login for `REMOTE_USER` |
+| Writable model cache path | Default: `~/.cache/huggingface/hub/` (created by `start.sh`) |
+
+#### Network configuration (required before first run)
+
+Edit the block at the top of `start.sh` (see step 2). Set the same `WORKER_IP` in `stop.sh`.
 
 ### 2. Configure network
 
@@ -191,6 +229,18 @@ Kill everything and restart cleanly. A crashed serve can leave GPU memory held o
 **`docker pull` fails on head**
 
 - Confirm outbound network access to `ghcr.io` on the head node
+
+**Model download fails (`huggingface_hub` / `snapshot_download`)**
+
+- Confirm outbound access to `huggingface.co` on the head node
+- Install: `pip install huggingface_hub`
+- For gated models, run `huggingface-cli login` first (this checkpoint is public)
+
+**`rsync` fails during model sync**
+
+- Install `rsync` on both nodes
+- Verify SSH: `ssh <user>@<WORKER_IP> rsync --version`
+- Check disk space on the worker (~181 GB)
 
 **Image copy to worker fails**
 

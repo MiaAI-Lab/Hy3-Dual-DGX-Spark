@@ -33,6 +33,7 @@ On **both** nodes:
 
 On the **head** node (where you run `start.sh`):
 
+- Outbound access to `ghcr.io` (image is pulled here, then streamed to the worker)
 - Passwordless SSH to the worker as `REMOTE_USER` (default: your login)
 - Optional cluster key at `/etc/kamiwaza/ssl/cluster.key` (used automatically if present)
 - `python3` with `huggingface_hub` installed
@@ -75,7 +76,7 @@ Set the same `WORKER_IP` at the top of `stop.sh`.
 
 The script will:
 
-1. Pull the Docker image on head and worker if missing (~19 GB, public GHCR — no login required)
+1. Pull the Docker image on head if missing (~19 GB, public GHCR — no login required), then copy it to the worker over SSH if the worker does not have it
 2. Download or locate the model from HuggingFace (`kodelow/Hy3-NVFP4-W4A16`)
 3. rsync weights to the worker over SSH
 4. Remove any stale `hy3-head` / `hy3-worker` containers
@@ -187,10 +188,14 @@ Kill everything and restart cleanly. A crashed serve can leave GPU memory held o
 ./stop.sh && ./start.sh
 ```
 
-**`docker pull` fails on head or worker**
+**`docker pull` fails on head**
 
-- Confirm outbound network access to `ghcr.io`
-- On the worker, verify SSH: `ssh <user>@<WORKER_IP> docker pull ghcr.io/miaai-lab/hy3-dual-dgx-spark:vllm-probe-modded`
+- Confirm outbound network access to `ghcr.io` on the head node
+
+**Image copy to worker fails**
+
+- Verify SSH from head: `ssh <user>@<WORKER_IP> docker info`
+- Re-copy manually: `docker save ghcr.io/miaai-lab/hy3-dual-dgx-spark:vllm-probe-modded | ssh <user>@<WORKER_IP> docker load`
 
 **Health check**
 

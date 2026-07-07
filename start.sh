@@ -44,8 +44,8 @@ if ! docker image inspect "$IMAGE" >/dev/null 2>&1; then
   docker pull "$IMAGE"
 fi
 if ! ssh "${SSH_OPTS[@]}" "$REMOTE_TARGET" "docker image inspect '$IMAGE' >/dev/null 2>&1"; then
-  echo "Pulling on worker (${WORKER_IP})..."
-  ssh "${SSH_OPTS[@]}" "$REMOTE_TARGET" "docker pull '$IMAGE'"
+  echo "Copying image to worker (${WORKER_IP}) via docker save | ssh docker load..."
+  docker save "$IMAGE" | ssh "${SSH_OPTS[@]}" "$REMOTE_TARGET" "docker load"
 fi
 
 echo "== download / locate model =="

@@ -174,13 +174,6 @@ Edit the network block at the top of `start.sh`, or override at runtime via envi
 
 Keep `WORKER_IP` in `stop.sh` aligned with the value in `start.sh` (or export it before running `./stop.sh`).
 
-### Publish a new image (maintainers)
-
-```bash
-export GITHUB_TOKEN=ghp_...   # needs write:packages
-./push-image.sh
-```
-
 ---
 
 ## Troubleshooting
@@ -220,9 +213,8 @@ Returns `200` once model load completes.
 ## File layout
 
 ```
-start.sh        # all-in-one launcher (edit network block at top)
-stop.sh         # tear down both containers
-push-image.sh   # publish vLLM image to ghcr.io (maintainers)
+start.sh    # all-in-one launcher (edit network block at top)
+stop.sh     # tear down both containers
 README.md
 ```
 

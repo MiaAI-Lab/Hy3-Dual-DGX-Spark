@@ -1,0 +1,36 @@
+# Maintainer / local-only tooling
+push-image.sh
+setup-git-lfs.sh
+load-image.sh
+PLAN.md
+
+# Legacy dirs (not part of public repo)
+scripts/
+env/
+
+# Docker image exports
+image/
+*.tar
+*.tar.gz
+*.tar.zst
+
+# Local tooling downloads
+.tools/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Editor / OS
+*.swp
+*~
+.DS_Store
+.idea/
+.vscode/
+
+# Secrets
+.env
+*.key
+*.pem

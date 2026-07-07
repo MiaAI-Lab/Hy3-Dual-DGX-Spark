@@ -32,10 +32,20 @@ docker_common=(
   -e VLLM_USE_B12X_FP8_GEMM=0 -e VLLM_USE_B12X_MOE=0 -e VLLM_USE_B12X_SPARSE_INDEXER=0
 )
 
+SSH_OPTS=(-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o GlobalKnownHostsFile=/dev/null -o LogLevel=ERROR -o BatchMode=yes -o ConnectTimeout=10)
+if [[ -f "$SSH_KEY" ]]; then
+  SSH_OPTS+=(-i "$SSH_KEY" -o IdentitiesOnly=yes -o IdentityAgent=none)
+fi
+REMOTE_TARGET="${REMOTE_USER}@${WORKER_IP}"
+
+echo "== ensure Docker image (${IMAGE}) =="
 if ! docker image inspect "$IMAGE" >/dev/null 2>&1; then
-  echo "Missing Docker image: $IMAGE" >&2
-  echo "Pull it on both nodes first (see README step 1), then rerun start.sh." >&2
-  exit 1
+  echo "Pulling on head..."
+  docker pull "$IMAGE"
+fi
+if ! ssh "${SSH_OPTS[@]}" "$REMOTE_TARGET" "docker image inspect '$IMAGE' >/dev/null 2>&1"; then
+  echo "Pulling on worker (${WORKER_IP})..."
+  ssh "${SSH_OPTS[@]}" "$REMOTE_TARGET" "docker pull '$IMAGE'"
 fi
 
 echo "== download / locate model =="
@@ -56,12 +66,7 @@ MODEL_PATH="/models/snapshots/${MODEL_REVISION}"
 
 mkdir -p "$MODEL_HOST_DIR"
 
-SSH_OPTS=(-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o GlobalKnownHostsFile=/dev/null -o LogLevel=ERROR -o BatchMode=yes -o ConnectTimeout=10)
-if [[ -f "$SSH_KEY" ]]; then
-  SSH_OPTS+=(-i "$SSH_KEY" -o IdentitiesOnly=yes -o IdentityAgent=none)
-fi
 RSYNC_RSH="ssh ${SSH_OPTS[*]}"
-REMOTE_TARGET="${REMOTE_USER}@${WORKER_IP}"
 
 echo "== rsync model to worker (${WORKER_IP}) =="
 ssh "${SSH_OPTS[@]}" "$REMOTE_TARGET" "mkdir -p ${MODEL_REMOTE_DIR}"

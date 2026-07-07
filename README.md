@@ -24,26 +24,11 @@ Everything runs through two scripts:
 
 ## Quick start
 
-### 1. Download the Docker image
-
-Run on **both** nodes (head and worker). The image is ~19 GB and public — no login required.
-
-```bash
-docker pull ghcr.io/miaai-lab/hy3-dual-dgx-spark:vllm-probe-modded
-```
-
-Verify the image is present:
-
-```bash
-docker images ghcr.io/miaai-lab/hy3-dual-dgx-spark:vllm-probe-modded
-```
-
-### 2. Prerequisites
+### 1. Prerequisites
 
 On **both** nodes:
 
 - Docker with GPU support
-- Image pulled (step 1)
 - ~181 GB free disk for model weights
 
 On the **head** node (where you run `start.sh`):
@@ -52,7 +37,7 @@ On the **head** node (where you run `start.sh`):
 - Optional cluster key at `/etc/kamiwaza/ssl/cluster.key` (used automatically if present)
 - `python3` with `huggingface_hub` installed
 
-### 3. Configure network
+### 2. Configure network
 
 Edit the block at the top of `start.sh`:
 
@@ -82,7 +67,7 @@ ibdev2netdev
 
 Set the same `WORKER_IP` at the top of `stop.sh`.
 
-### 4. Start
+### 3. Start
 
 ```bash
 ./start.sh
@@ -90,13 +75,14 @@ Set the same `WORKER_IP` at the top of `stop.sh`.
 
 The script will:
 
-1. Download or locate the model from HuggingFace (`kodelow/Hy3-NVFP4-W4A16`)
-2. rsync weights to the worker over SSH
-3. Remove any stale `hy3-head` / `hy3-worker` containers
-4. Start a Ray head on this node and a Ray worker on the remote node
-5. Wait until Ray reports 2 nodes
-6. Launch vLLM inside the head container (tool-parser patches + MTP spec decode)
-7. Follow vLLM logs in your terminal
+1. Pull the Docker image on head and worker if missing (~19 GB, public GHCR — no login required)
+2. Download or locate the model from HuggingFace (`kodelow/Hy3-NVFP4-W4A16`)
+3. rsync weights to the worker over SSH
+4. Remove any stale `hy3-head` / `hy3-worker` containers
+5. Start a Ray head on this node and a Ray worker on the remote node
+6. Wait until Ray reports 2 nodes
+7. Launch vLLM inside the head container (tool-parser patches + MTP spec decode)
+8. Follow vLLM logs in your terminal
 
 Model load takes roughly 10 minutes. When ready, the API is at:
 
@@ -104,7 +90,7 @@ Model load takes roughly 10 minutes. When ready, the API is at:
 http://<HEAD_IP>:8888/v1
 ```
 
-### 5. Stop
+### 4. Stop
 
 ```bash
 ./stop.sh
@@ -201,9 +187,10 @@ Kill everything and restart cleanly. A crashed serve can leave GPU memory held o
 ./stop.sh && ./start.sh
 ```
 
-**`Missing Docker image`**
+**`docker pull` fails on head or worker**
 
-Pull the image on both nodes (see step 1), then rerun `./start.sh`.
+- Confirm outbound network access to `ghcr.io`
+- On the worker, verify SSH: `ssh <user>@<WORKER_IP> docker pull ghcr.io/miaai-lab/hy3-dual-dgx-spark:vllm-probe-modded`
 
 **Health check**
 

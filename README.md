@@ -1,119 +1,219 @@
-# Hy3-295B · NVFP4 · MTP Speculative · 2× DGX Spark
+# Hy3-295B · NVFP4 · 2× DGX Spark
 
-**Tencent Hunyuan 3 (295B MoE / 21B active / 256K native ctx) serving on two NVIDIA DGX Sparks
-(GB10, sm121) at TP=2 over the 200GbE RoCE fabric — with the model's native 3.8B MTP layer
-live for speculative decoding.**
+Serve [Tencent Hunyuan 3 (295B MoE)](https://huggingface.co/kodelow/Hy3-NVFP4-W4A16) at **tensor-parallel size 2** across two NVIDIA DGX Spark nodes (GB10), with MTP speculative decoding and Hy3 tool-call support.
 
-As far as we know these are the **first published Hy3-on-DGX-Spark numbers with MTP
-speculative decoding enabled** (2026-07-07). The NVIDIA forum threads were at the
-"sizing math + one failed FlashInfer load" stage when we brought this up.
+Everything runs through two scripts:
 
-## Benchmarks (so far — this repo is being tuned live, watch the commits)
+| Script | Purpose |
+|---|---|
+| `./start.sh` | Download model, sync to worker, start Ray cluster, launch vLLM |
+| `./stop.sh` | Tear down head and worker containers |
 
-512-token generations, temp 0.9 / top_p 1.0 (Tencent-recommended), 128K max ctx, FP8 KV:
+---
 
-| Config | Single-stream | 6-way concurrent | Notes |
-|---|---|---|---|
-| **v1: enforce-eager + MTP spec-1** | **21.8 tok/s** | **59.7 tok/s agg** (~10/stream) | ✅ stable, verified twice |
-| v2: CUDA graphs + MTP spec-2 | 15–16 tok/s | — | ❌ spec-2 is a net LOSS (see below) |
-| v2.2: CUDA graphs + MTP spec-1 | 15.5–16.3 tok/s | — | ❌ the compiled/graphs path itself is the tax |
+## Quick start
 
-**Verdict after clean A/B isolation: `--enforce-eager` WINS on this stack.** Removing it
-(inductor compile + CUDA graphs, ~30s compile) cost ~25% throughput with BOTH spec-1 and
-spec-2 — the compiled path interacts badly with the marlin W4A16 decode on sm121 in vLLM
-0.23. Counter-intuitive but measured twice. Revisit on newer stacks (NVIDIA's vLLM 26.06
-container with NVFP4 paged-KV is the obvious next candidate).
+### 1. Prerequisites
 
-**MTP acceptance on real prompts (the finding):** position-1 draft acceptance ran **62–76%**,
-but position-2 only **~18–21%**. With `num_speculative_tokens: 2` the second draft is thrown
-away four times out of five while you still pay its draft+verify cost every step — net
-throughput DROPS ~30% vs spec-1. **On GB10, run `num_speculative_tokens: 1`,** despite the
-official recipe suggesting 2 (that advice is tuned for H200/GB300-class serving).
+On **both** nodes:
 
-First words the model produced on this hardware:
-> *Tiny twin cores hum, / shoulder to shoulder they forge— / a giant's lost throne.*
+- Docker with GPU support
+- The vLLM image loaded locally (default: `vllm-node-tf5-glm52-b12x:probe-modded`)
+- ~181 GB free disk for model weights
 
-## The recipe
+On the **head** node (where you run `start.sh`):
 
-- **Weights:** [kodelow/Hy3-NVFP4-W4A16](https://huggingface.co/kodelow/Hy3-NVFP4-W4A16) —
-  181GB, quantized from the FINAL Hy3 release, routed experts 4-bit / everything
-  quality-sensitive BF16, **MTP layer preserved** (author-measured 83.4% GSM8K acceptance,
-  lossless quality). Critically it is **MARLIN-kernel-only by design**, which sidesteps the
-  FlashInfer native-FP4 path that freezes GB10s.
-- **GB10 launch flags:** based on [LibertAIDAI/Hy3-preview-NVFP4](https://huggingface.co/LibertAIDAI/Hy3-preview-NVFP4)'s
-  verified 2×GB10 bring-up (marlin backend, CUDA-13 image, vLLM ≥ 0.23).
-- **Serving stack:** vLLM **0.23.1** (any ≥0.23 with `HYV3ForCausalLM`), Ray for the 2-node
-  TP=2, NCCL over the ConnectX-7 RoCE fabric (MTU 9000).
+- Passwordless SSH to the worker as `REMOTE_USER` (default: your login)
+- Optional cluster key at `/etc/kamiwaza/ssl/cluster.key` (used automatically if present)
+- `python3` with `huggingface_hub` installed
 
-Both nodes need the full 181GB locally at the same path (rsync over the fabric, ~7 min at
-~460MB/s). Budget check per node: ~90GB weights + ~15GB KV inside the **~111GiB actually
-free** on a 128GB GB10 (see bug #4).
+### 2. Configure network
 
-```
-scripts/hy3-launch.sh      # Ray head (node1) + worker (node2) in docker, fabric-pinned NCCL
-scripts/serve-hy3.sh       # the vllm serve command (v1 stable config), run inside the head container
+Edit the block at the top of `start.sh`:
+
+```bash
+HEAD_IP="10.0.0.1"           # this node's fabric/cluster IP
+WORKER_IP="10.0.0.2"         # remote worker fabric/cluster IP
+CLUSTER_IFACE="enp1s0f1np1"  # NIC carrying HEAD_IP/WORKER_IP
+NCCL_IB_HCA="roceP2p1s0f0"   # RoCE HCA for NCCL GPU traffic
 ```
 
-Key serve flags (see scripts for full):
+**How to find these on a DGX Spark:**
+
+```bash
+# Cluster IPs — the /24 used between your two nodes
+ip -4 -o addr show
+
+# Which NIC carries HEAD_IP
+ip -o -4 addr show to 10.0.0.1/32
+
+# RoCE device name
+ibdev2netdev
 ```
-vllm serve /models --served-model-name hy3 --port 8600 \
+
+`CLUSTER_IFACE` must be the interface that has your `10.0.0.x` addresses. This is used for Gloo and NCCL socket bootstrap. Do **not** point it at the RoCE NIC (`enP2p1s0f0np0`) — that interface typically has no IP and will cause distributed init to fail.
+
+`NCCL_IB_HCA` is the RoCE device for GPU-to-GPU traffic over the 200G fabric.
+
+### 3. Start
+
+```bash
+./start.sh
+```
+
+The script will:
+
+1. Download or locate the model from HuggingFace (`kodelow/Hy3-NVFP4-W4A16`)
+2. rsync weights to the worker over SSH
+3. Remove any stale `hy3-head` / `hy3-worker` containers
+4. Start a Ray head on this node and a Ray worker on the remote node
+5. Wait until Ray reports 2 nodes
+6. Launch vLLM inside the head container (tool-parser patches + MTP spec decode)
+7. Follow vLLM logs in your terminal
+
+Model load takes roughly 10 minutes. When ready, the API is at:
+
+```
+http://<HEAD_IP>:8600/v1
+```
+
+### 4. Stop
+
+```bash
+./stop.sh
+```
+
+Removes `hy3-head` locally and `hy3-worker` on the worker via SSH.
+
+---
+
+## What `start.sh` runs
+
+### Ray cluster
+
+Two Docker containers, both using host networking and the same NCCL/Gloo settings:
+
+- `hy3-head` — Ray head on `HEAD_IP`
+- `hy3-worker` — Ray worker on `WORKER_IP`, started over SSH
+
+### vLLM serve
+
+Launched detached inside `hy3-head` with:
+
+```
+vllm serve <model-snapshot> \
+  --served-model-name hy3 --port 8600 \
   --tensor-parallel-size 2 --distributed-executor-backend ray \
   --max-model-len 131072 --max-num-seqs 6 \
   --kv-cache-dtype fp8_e4m3 --gpu-memory-utilization 0.90 \
   --speculative-config '{"method":"mtp","num_speculative_tokens":1}' \
+  --tool-call-parser hy_v3 --reasoning-parser hy_v3 --enable-auto-tool-choice \
   --trust-remote-code --enforce-eager
 ```
 
-## The six bugs you WILL hit (we hit them all tonight so you don't have to)
+On startup it also patches vLLM's `hy_v3` parsers in-place so `:opensource`-suffixed tokenizer tokens match the checkpoint.
 
-1. **`World size (2) larger than available GPUs (1)`** — multi-node vLLM 0.23 requires
-   `--distributed-executor-backend ray` spelled out. The error message tells you; believe it.
-2. **`--speculative-config: Value method:mtp cannot be converted`** — your JSON got mangled
-   by shell quoting (especially through SSH hops). Ship the serve command as a **script file**
-   and `docker cp` it into the container; never inline-quote JSON through nested shells.
-3. **`HYV3ReasoningParser could not locate think start/end tokens`** — this quant's tokenizer
-   doesn't carry the think tokens the `hy_v3` reasoning parser expects. Drop
-   `--reasoning-parser hy_v3` (and `--tool-call-parser` if it complains) for bring-up; add back
-   later with official tokenizer files if you need parsed tool-calls.
-4. **`Free memory on device (111.45/121.69 GiB) less than desired utilization (0.92)`** —
-   a GB10 does NOT expose 0.92×121.69 at boot. **Use `--gpu-memory-utilization 0.90`.**
-5. **Serve silently freezes mid-load, no log lines** — if you background the serve from a
-   `docker exec -i` session, its stdout can end up on a dead pipe that fills (64KB) and
-   **blocks the whole process**. Have the script itself `exec > /logfile 2>&1`, `docker cp` it
-   in, and start it with `docker exec -d`.
-6. **spec-2 slower than spec-1** — see the benchmark section. Position-2 MTP acceptance ~20%
-   on GB10 makes the second draft token a pure tax.
-7. **Relaunch hangs forever after killing a serve** — killing vLLM on the head node leaves the
-   OTHER node's RayWorkerProc holding ~90GB. The next serve sits silently waiting for GPU
-   room. **Bounce BOTH containers between serve attempts** (`docker restart` head + worker,
-   wait for `ray status` to show 2 nodes).
+---
 
-Also: Hy3 has **8 KV heads → TP=3 is mathematically impossible** in vLLM. It's a 2-Spark or
-4-Spark model.
+## Logs
 
-## KV / context math
+| What | Command |
+|---|---|
+| **vLLM** (use this) | `docker exec hy3-head tail -f /tmp/hy3-serve.log` |
+| Ray startup only | `docker logs -f hy3-head` |
 
-Hy3 GQA (64Q/8KV, 80 layers): **~0.33MB/token BF16, ~0.16MB FP8**. At 181GB weights on
-2×GB10 with GMU 0.90 you get roughly a **~180K-token KV pool at FP8** — comfortable for the
-128K launch config with 6 sequences. 256K single-sequence is a stretch goal (needs ~42GB
-pool); the smaller MXFP4 quant (172GB) buys ~+110K pool tokens if you need it.
+Ray is PID 1 in the container, so vLLM output does not appear in `docker logs`. `start.sh` follows `/tmp/hy3-serve.log` by default.
 
-## Credits
+Detach from log follow without stopping the server: **Ctrl+C**.
 
-- **kodelow** — the NVFP4-W4A16 quant with MTP preserved (the reason this works at all)
-- **LibertAI** — first verified HYV3 serve on GB10 hardware + the marlin/eager flags
-- **Tencent Hunyuan** — Hy3 + shipping a real MTP layer in the open weights (Apache 2.0)
-- Community context: @aijoey's parallel Hy3 2-Spark work (25 tok/s single-stream, no MTP) and
-  @u1tra_instinct's W4A4/A4Q experiments pushed this along on the same night. Racing is fun.
+Start without following logs:
 
-## Status / roadmap
+```bash
+./start.sh --no-follow
+# or
+FOLLOW_LOGS=0 ./start.sh
+```
 
-- [x] 2× Spark TP=2 serve, MTP spec-1, 128K ctx — **stable + benched**
-- [x] spec-2 evaluated — rejected on data
-- [x] CUDA-graphs evaluated (both spec configs) — eager wins on vLLM 0.23/sm121, rejected on data
-- [ ] vllm#47777 router `expert_bias` fp32 patch (quality)
-- [ ] context scaling toward 256K
-- [ ] deeper kernel tuning pass
+---
 
-*Built by Kai (Tony DeAngelo's AI ops agent) on the 2Wild 4-Spark cluster. Part of the same
-recipe family as our GLM-5.2-655K, DeepSeek-V4-Flash-DSpark-1M, and MiniMax-M3 releases.*
+## Optional configuration
+
+### `env/hy3-nvfp4-tp2.env`
+
+Override serve settings without editing `start.sh`:
+
+```bash
+SERVED_NAME=hy3
+PORT=8600
+IMAGE=vllm-node-tf5-glm52-b12x:probe-modded
+```
+
+Network IPs and interface names in `start.sh` take precedence over values in this file.
+
+### Environment variables
+
+| Variable | Default | Used by |
+|---|---|---|
+| `REMOTE_USER` | `$(id -un)` | `start.sh`, `stop.sh` |
+| `SSH_KEY` | `/etc/kamiwaza/ssl/cluster.key` | `start.sh`, `stop.sh` |
+| `WORKER_IP` | `10.0.0.2` | `stop.sh` |
+| `FOLLOW_LOGS` | `1` | `start.sh` |
+| `MODEL_REPO` | `kodelow/Hy3-NVFP4-W4A16` | `start.sh` |
+
+Keep `WORKER_IP` in `stop.sh` aligned with the value in `start.sh` (or export it before running `./stop.sh`).
+
+---
+
+## Troubleshooting
+
+**`Unable to find address for: enP2p1s0f0np0`**
+
+`CLUSTER_IFACE` is set to the RoCE NIC instead of the NIC with your cluster IPs. Use the interface that carries `10.0.0.1` / `10.0.0.2` (typically `enp1s0f1np1`).
+
+**`Ray never reported 2 nodes`**
+
+- Check SSH: `ssh <user>@<WORKER_IP> docker info`
+- Check worker container: `ssh <user>@<WORKER_IP> docker ps -a --filter name=hy3-worker`
+- Verify `HEAD_IP` / `WORKER_IP` match your fabric addresses
+
+**Serve hangs or fails after a previous run**
+
+Kill everything and restart cleanly. A crashed serve can leave GPU memory held on the worker:
+
+```bash
+./stop.sh && ./start.sh
+```
+
+**`Missing Docker image`**
+
+Load the image on both nodes before running `start.sh`.
+
+**Health check**
+
+```bash
+curl http://<HEAD_IP>:8600/health
+```
+
+Returns `200` once model load completes.
+
+---
+
+## File layout
+
+```
+start.sh          # all-in-one launcher (edit network block at top)
+stop.sh           # tear down both containers
+env/
+  hy3-nvfp4-tp2.env   # optional serve/image overrides
+scripts/
+  hy3-launch.sh       # deprecated wrapper → calls start.sh
+  serve-tools-hy3.sh  # reference copy; start.sh embeds this inline
+```
+
+---
+
+## Model
+
+- **Weights:** [kodelow/Hy3-NVFP4-W4A16](https://huggingface.co/kodelow/Hy3-NVFP4-W4A16) — 181 GB, MARLIN W4A16, MTP layer preserved
+- **Stack:** vLLM 0.23.x, Ray TP=2, FP8 KV cache, MTP speculative decoding (`num_speculative_tokens: 1`)
+- **Hardware:** 2× NVIDIA DGX Spark (GB10), 200GbE RoCE fabric

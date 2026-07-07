@@ -16,7 +16,13 @@ speculative decoding enabled** (2026-07-07). The NVIDIA forum threads were at th
 |---|---|---|---|
 | **v1: enforce-eager + MTP spec-1** | **21.8 tok/s** | **59.7 tok/s agg** (~10/stream) | ✅ stable, verified twice |
 | v2: CUDA graphs + MTP spec-2 | 15–16 tok/s | — | ❌ spec-2 is a net LOSS (see below) |
-| v2.2: CUDA graphs + MTP spec-1 | *tuning in progress* | | |
+| v2.2: CUDA graphs + MTP spec-1 | 15.5–16.3 tok/s | — | ❌ the compiled/graphs path itself is the tax |
+
+**Verdict after clean A/B isolation: `--enforce-eager` WINS on this stack.** Removing it
+(inductor compile + CUDA graphs, ~30s compile) cost ~25% throughput with BOTH spec-1 and
+spec-2 — the compiled path interacts badly with the marlin W4A16 decode on sm121 in vLLM
+0.23. Counter-intuitive but measured twice. Revisit on newer stacks (NVIDIA's vLLM 26.06
+container with NVFP4 paged-KV is the obvious next candidate).
 
 **MTP acceptance on real prompts (the finding):** position-1 draft acceptance ran **62–76%**,
 but position-2 only **~18–21%**. With `num_speculative_tokens: 2` the second draft is thrown
@@ -77,6 +83,10 @@ vllm serve /models --served-model-name hy3 --port 8600 \
    in, and start it with `docker exec -d`.
 6. **spec-2 slower than spec-1** — see the benchmark section. Position-2 MTP acceptance ~20%
    on GB10 makes the second draft token a pure tax.
+7. **Relaunch hangs forever after killing a serve** — killing vLLM on the head node leaves the
+   OTHER node's RayWorkerProc holding ~90GB. The next serve sits silently waiting for GPU
+   room. **Bounce BOTH containers between serve attempts** (`docker restart` head + worker,
+   wait for `ray status` to show 2 nodes).
 
 Also: Hy3 has **8 KV heads → TP=3 is mathematically impossible** in vLLM. It's a 2-Spark or
 4-Spark model.
@@ -100,7 +110,7 @@ pool); the smaller MXFP4 quant (172GB) buys ~+110K pool tokens if you need it.
 
 - [x] 2× Spark TP=2 serve, MTP spec-1, 128K ctx — **stable + benched**
 - [x] spec-2 evaluated — rejected on data
-- [ ] CUDA-graphs + spec-1 (in flight)
+- [x] CUDA-graphs evaluated (both spec configs) — eager wins on vLLM 0.23/sm121, rejected on data
 - [ ] vllm#47777 router `expert_bias` fp32 patch (quality)
 - [ ] context scaling toward 256K
 - [ ] deeper kernel tuning pass

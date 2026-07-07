@@ -13,29 +13,34 @@ Everything runs through two scripts:
 
 ## Quick start
 
-### 1. Prerequisites
+### 1. Download the Docker image
+
+Run these commands on **both** nodes (head and worker). The image is ~19 GB.
+
+```bash
+# Log in to GitHub Container Registry (package is private)
+echo "YOUR_GITHUB_TOKEN" | docker login ghcr.io -u MiaAI-Lab --password-stdin
+
+# Download the vLLM image
+docker pull ghcr.io/miaai-lab/hy3-dual-dgx-spark:vllm-probe-modded
+```
+
+Use a GitHub personal access token with `read:packages` scope. Create one at:
+https://github.com/settings/tokens
+
+Verify the image is present:
+
+```bash
+docker images ghcr.io/miaai-lab/hy3-dual-dgx-spark:vllm-probe-modded
+```
+
+### 2. Prerequisites
 
 On **both** nodes:
 
 - Docker with GPU support
-- The vLLM Docker image (~19 GB)
+- Image pulled (step 1)
 - ~181 GB free disk for model weights
-
-**Docker image** (once published to GHCR):
-
-```bash
-docker pull ghcr.io/miaai-lab/hy3-dual-dgx-spark:vllm-probe-modded
-IMAGE=ghcr.io/miaai-lab/hy3-dual-dgx-spark:vllm-probe-modded ./start.sh
-```
-
-Default local tag if you built it yourself: `vllm-node-tf5-glm52-b12x:probe-modded`
-
-**Publish the image** (maintainers — needs `GITHUB_TOKEN` with `write:packages`):
-
-```bash
-export GITHUB_TOKEN=ghp_...   # classic PAT or fine-grained token with write:packages
-./push-image.sh
-```
 
 On the **head** node (where you run `start.sh`):
 
@@ -43,7 +48,7 @@ On the **head** node (where you run `start.sh`):
 - Optional cluster key at `/etc/kamiwaza/ssl/cluster.key` (used automatically if present)
 - `python3` with `huggingface_hub` installed
 
-### 2. Configure network
+### 3. Configure network
 
 Edit the block at the top of `start.sh`:
 
@@ -71,10 +76,10 @@ ibdev2netdev
 
 `NCCL_IB_HCA` is the RoCE device for GPU-to-GPU traffic over the 200G fabric.
 
-### 3. Start
+### 4. Start
 
 ```bash
-./start.sh
+IMAGE=ghcr.io/miaai-lab/hy3-dual-dgx-spark:vllm-probe-modded ./start.sh
 ```
 
 The script will:
@@ -93,7 +98,7 @@ Model load takes roughly 10 minutes. When ready, the API is at:
 http://<HEAD_IP>:8600/v1
 ```
 
-### 4. Stop
+### 5. Stop
 
 ```bash
 ./stop.sh
@@ -160,6 +165,7 @@ Edit the network block at the top of `start.sh`, or override at runtime via envi
 
 | Variable | Default | Used by |
 |---|---|---|
+| `IMAGE` | `vllm-node-tf5-glm52-b12x:probe-modded` | `start.sh` — set to `ghcr.io/miaai-lab/hy3-dual-dgx-spark:vllm-probe-modded` after step 1 |
 | `REMOTE_USER` | `$(id -un)` | `start.sh`, `stop.sh` |
 | `SSH_KEY` | `/etc/kamiwaza/ssl/cluster.key` | `start.sh`, `stop.sh` |
 | `WORKER_IP` | `10.0.0.2` | `stop.sh` |
@@ -167,6 +173,13 @@ Edit the network block at the top of `start.sh`, or override at runtime via envi
 | `MODEL_REPO` | `kodelow/Hy3-NVFP4-W4A16` | `start.sh` |
 
 Keep `WORKER_IP` in `stop.sh` aligned with the value in `start.sh` (or export it before running `./stop.sh`).
+
+### Publish a new image (maintainers)
+
+```bash
+export GITHUB_TOKEN=ghp_...   # needs write:packages
+./push-image.sh
+```
 
 ---
 

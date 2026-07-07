@@ -76,10 +76,12 @@ ibdev2netdev
 
 `NCCL_IB_HCA` is the RoCE device for GPU-to-GPU traffic over the 200G fabric.
 
+Set the same `WORKER_IP` at the top of `stop.sh`.
+
 ### 4. Start
 
 ```bash
-IMAGE=ghcr.io/miaai-lab/hy3-dual-dgx-spark:vllm-probe-modded ./start.sh
+./start.sh
 ```
 
 The script will:
@@ -104,7 +106,7 @@ http://<HEAD_IP>:8600/v1
 ./stop.sh
 ```
 
-Removes `hy3-head` locally and `hy3-worker` on the worker via SSH.
+Removes `hy3-head` locally and `hy3-worker` on the worker via SSH. Edit `WORKER_IP` at the top of `stop.sh` if you changed it in `start.sh`.
 
 ---
 
@@ -165,14 +167,13 @@ Edit the network block at the top of `start.sh`, or override at runtime via envi
 
 | Variable | Default | Used by |
 |---|---|---|
-| `IMAGE` | `vllm-node-tf5-glm52-b12x:probe-modded` | `start.sh` — set to `ghcr.io/miaai-lab/hy3-dual-dgx-spark:vllm-probe-modded` after step 1 |
+| `IMAGE` | `ghcr.io/miaai-lab/hy3-dual-dgx-spark:vllm-probe-modded` | `start.sh` |
 | `REMOTE_USER` | `$(id -un)` | `start.sh`, `stop.sh` |
 | `SSH_KEY` | `/etc/kamiwaza/ssl/cluster.key` | `start.sh`, `stop.sh` |
-| `WORKER_IP` | `10.0.0.2` | `stop.sh` |
 | `FOLLOW_LOGS` | `1` | `start.sh` |
 | `MODEL_REPO` | `kodelow/Hy3-NVFP4-W4A16` | `start.sh` |
 
-Keep `WORKER_IP` in `stop.sh` aligned with the value in `start.sh` (or export it before running `./stop.sh`).
+`WORKER_IP` is set at the top of both `start.sh` and `stop.sh` — keep them in sync when you edit your network config.
 
 ---
 
@@ -198,7 +199,7 @@ Kill everything and restart cleanly. A crashed serve can leave GPU memory held o
 
 **`Missing Docker image`**
 
-Load the image on both nodes before running `start.sh`.
+Pull the image on both nodes (see step 1), then rerun `./start.sh`.
 
 **Health check**
 
@@ -213,9 +214,10 @@ Returns `200` once model load completes.
 ## File layout
 
 ```
-start.sh    # all-in-one launcher (edit network block at top)
-stop.sh     # tear down both containers
+start.sh      # all-in-one launcher (edit network block at top)
+stop.sh       # tear down both containers (WORKER_IP must match start.sh)
 README.md
+.gitignore
 ```
 
 ---

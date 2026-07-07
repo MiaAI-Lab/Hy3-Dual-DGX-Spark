@@ -16,7 +16,7 @@ MODEL_REMOTE_DIR="${MODEL_REMOTE_DIR:-}"
 MODEL_PATH="${MODEL_PATH:-}"
 SERVED_NAME="${SERVED_NAME:-hy3}"
 PORT="${PORT:-8600}"
-IMAGE="${IMAGE:-vllm-node-tf5-glm52-b12x:probe-modded}"
+IMAGE="${IMAGE:-ghcr.io/miaai-lab/hy3-dual-dgx-spark:vllm-probe-modded}"
 RAY_PORT="${RAY_PORT:-26480}"
 REMOTE_USER="${REMOTE_USER:-$(id -un)}"
 SSH_KEY="${SSH_KEY:-/etc/kamiwaza/ssl/cluster.key}"
@@ -34,7 +34,7 @@ docker_common=(
 
 if ! docker image inspect "$IMAGE" >/dev/null 2>&1; then
   echo "Missing Docker image: $IMAGE" >&2
-  echo "Load or build it first, then rerun start.sh." >&2
+  echo "Pull it on both nodes first (see README step 1), then rerun start.sh." >&2
   exit 1
 fi
 

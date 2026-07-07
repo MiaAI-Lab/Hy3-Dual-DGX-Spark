@@ -1,9 +1,13 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# =============================================================================
+# Cluster network — must match start.sh
+# =============================================================================
+WORKER_IP="10.0.0.2"
+
 HEAD_NAME="${HEAD_NAME:-hy3-head}"
 WORKER_NAME="${WORKER_NAME:-hy3-worker}"
-WORKER_IP="${WORKER_IP:-10.0.0.2}"
 REMOTE_USER="${REMOTE_USER:-$(id -un)}"
 SSH_KEY="${SSH_KEY:-/etc/kamiwaza/ssl/cluster.key}"
 

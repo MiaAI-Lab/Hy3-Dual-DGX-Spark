@@ -203,3 +203,9 @@ README.md
 - **Weights:** [kodelow/Hy3-NVFP4-W4A16](https://huggingface.co/kodelow/Hy3-NVFP4-W4A16) — 181 GB, MARLIN W4A16, MTP layer preserved
 - **Stack:** vLLM 0.23.x, Ray TP=2, FP8 KV cache, MTP speculative decoding (`num_speculative_tokens: 1`)
 - **Hardware:** 2× NVIDIA DGX Spark (GB10), 200GbE RoCE fabric
+
+---
+
+## Credits
+
+This recipe was built upon the work of [tonyd2wild](https://github.com/tonyd2wild), whose [Hy3-295B NVFP4 MTP 2× DGX Spark](https://github.com/tonyd2wild/Hy3-295B-NVFP4-MTP-2x-DGX-Spark) bring-up established the core serving stack, benchmarks, and the bugs-to-avoid playbook that this repo streamlines into `start.sh` / `stop.sh`.
